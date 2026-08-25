@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "dev" },
+    "sqlAdminLogin": { "value": "pbipadmin" },
+    "sqlAdminPassword": { "value": "REPLACE_ME" },
+    "nextAuthSecret": { "value": "REPLACE_ME" },
+    "totpEncryptionKey": { "value": "REPLACE_ME" },
+    "containerRegistry": { "value": "myregistry.azurecr.io" },
+    "apiImage": { "value": "myregistry.azurecr.io/power-bi-platform-api:latest" },
+    "applicationImage": { "value": "myregistry.azurecr.io/power-bi-platform-app:latest" },
+    "deployRedis": { "value": false }
+  }
+}

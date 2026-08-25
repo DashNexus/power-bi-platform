@@ -7,20 +7,22 @@ __pycache__/
 *.so
 
 # Distribution / packaging
+# Anchored with a leading slash: a bare `lib/` also matches
+# application/src/lib/, which silently excluded the frontend's core modules.
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+/share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -73,7 +75,7 @@ docs/_build/
 
 # PyBuilder
 .pybuilder/
-target/
+/target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -179,3 +181,20 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# ─── Node / Next.js (application layer) ───────────────────────────────────────
+node_modules/
+.next/
+.next-*/
+out/
+.turbo/
+*.tsbuildinfo
+.eslintcache
+.vercel
+
+# Local env files (the committed template is .env.example)
+.env.local
+.env.*.local
+
+# Claude Code local overrides
+.claude/settings.local.json

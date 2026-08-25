@@ -1,0 +1,325 @@
+@import "tailwindcss";
+
+/* Enable dark: variant using the .dark class on <html> (set by next-themes) */
+@variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens — Sec Dash.
+ *
+ * Two layers, deliberately:
+ *
+ *   1. `@theme inline` maps Tailwind v4 colour utilities onto plain CSS custom
+ *      properties. Without this block Tailwind generates NO `bg-card` /
+ *      `text-muted-foreground` / `border-border` utilities at all, because v4
+ *      derives utilities from the `--color-*` theme namespace rather than from a
+ *      JS config. `inline` is what lets `.dark` (and the per-org override in
+ *      (platform)/layout.tsx) re-point a token at runtime.
+ *   2. `:root` / `.dark` hold the actual values.
+ *
+ * Never hard-code a gray/blue Tailwind palette class in a component — reach for
+ * the semantic token so light mode, dark mode, and org theming all stay correct
+ * in one place. Palette values are AA-validated against their own surfaces.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-subtle: var(--primary-subtle);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-subtle: var(--destructive-subtle);
+  --color-destructive-strong: var(--destructive-strong);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-subtle: var(--success-subtle);
+  --color-success-strong: var(--success-strong);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-warning-strong: var(--warning-strong);
+
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-subtle: var(--info-subtle);
+  --color-info-strong: var(--info-strong);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Brand marks — identical in both themes so the logo never shifts hue. */
+  --color-brand: #2d8cff;
+  --color-brand-green: #22c55e;
+  --color-brand-navy: #0b1220;
+
+  /* AI/assistant surfaces get their own accent so they read as a distinct mode. */
+  --color-assistant: var(--assistant);
+  --color-assistant-foreground: var(--assistant-foreground);
+  --color-assistant-subtle: var(--assistant-subtle);
+  --color-assistant-border: var(--assistant-border);
+}
+
+:root {
+  /* Tells the browser which palette to draw UA-owned surfaces with — the
+     <select> option popup, native scrollbars, and form-control defaults. Those
+     are rendered by the OS and cannot be reached with CSS classes, so without
+     this a dropdown list stays white on a dark page no matter how the control
+     itself is styled. */
+  color-scheme: light;
+
+  --background: #f6f8fb;
+  --foreground: #0b1220;
+
+  --card: #ffffff;
+  --card-foreground: #0b1220;
+
+  --popover: #ffffff;
+  --popover-foreground: #0b1220;
+
+  /* Interactive azure is a shade deeper than the brand mark so white label text
+     clears AA (5.13:1); --color-brand stays the true logo colour. */
+  --primary: #0b69de;
+  --primary-foreground: #ffffff;
+  --primary-hover: #0a5cc4;
+  --primary-subtle: #e8f1fe;
+
+  --secondary: #eff3f9;
+  --secondary-foreground: #1e293b;
+
+  --muted: #eff3f9;
+  --muted-foreground: #5b6b84;
+
+  --accent: #eff3f9;
+  --accent-foreground: #0b1220;
+
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --destructive-subtle: #fee2e2;
+  --destructive-strong: #b91c1c;
+
+  --success: #15803d;
+  --success-foreground: #ffffff;
+  --success-subtle: #dcfce7;
+  --success-strong: #15803d;
+
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --warning-subtle: #fef3c7;
+  --warning-strong: #b45309;
+
+  --info: #0b69de;
+  --info-foreground: #ffffff;
+  --info-subtle: #dbeafe;
+  --info-strong: #0b57c4;
+
+  --border: #e3e8f0;
+  --border-strong: #cbd5e1;
+  --input: #cbd5e1;
+  --ring: #0b69de;
+
+  --assistant: #7c3aed;
+  --assistant-foreground: #ffffff;
+  --assistant-subtle: #f3ebff;
+  --assistant-border: #ddd0fb;
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* Page background is the brand navy — the same value as the manifest
+     theme_color and the app icon's field, so the chrome and the icon agree. */
+  --background: #0b1220;
+  --foreground: #f8fafc;
+
+  --card: #111a2b;
+  --card-foreground: #f8fafc;
+
+  --popover: #162033;
+  --popover-foreground: #f8fafc;
+
+  /* Dark mode uses the exact brand azure and flips the label to navy, which
+     clears AA at 5.75:1 (white-on-azure would only reach 3.3:1). */
+  --primary: #2d8cff;
+  --primary-foreground: #071019;
+  --primary-hover: #4d9eff;
+  --primary-subtle: #0e2542;
+
+  --secondary: #1b2536;
+  --secondary-foreground: #e2e8f0;
+
+  --muted: #172234;
+  --muted-foreground: #94a3b8;
+
+  --accent: #1b2536;
+  --accent-foreground: #f8fafc;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --destructive-subtle: #331414;
+  --destructive-strong: #f87171;
+
+  --success: #22c55e;
+  --success-foreground: #071019;
+  --success-subtle: #14301f;
+  --success-strong: #4ade80;
+
+  --warning: #f59e0b;
+  --warning-foreground: #071019;
+  --warning-subtle: #31240a;
+  --warning-strong: #fbbf24;
+
+  --info: #2d8cff;
+  --info-foreground: #071019;
+  --info-subtle: #0e2542;
+  --info-strong: #69adff;
+
+  --border: #223148;
+  --border-strong: #33455f;
+  --input: #33455f;
+  --ring: #2d8cff;
+
+  --assistant: #a78bfa;
+  --assistant-foreground: #14091f;
+  --assistant-subtle: #1e1633;
+  --assistant-border: #35275c;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+/* Form controls inherit the themed surface instead of the UA default white. */
+::placeholder {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
+/* Element selectors, so any control that omits a `bg-*`/`text-*` utility still
+   lands on the themed surface rather than the UA default white. Specificity 0,0,1
+   loses to every utility class, so component-level styling still wins. */
+select,
+option,
+optgroup {
+  background-color: var(--card);
+  color: var(--foreground);
+}
+
+/* `color-scheme: dark` alone gives the option popup the browser's generic grey.
+   Naming the tokens makes the open list match the surface it drops out of. */
+option:disabled {
+  color: var(--muted-foreground);
+}
+optgroup {
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+optgroup option {
+  color: var(--foreground);
+  font-weight: 400;
+}
+
+/* The native date/time picker glyph is black by default and vanishes on the
+   dark card surface. */
+.dark ::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.6);
+}
+
+/* Consistent focus ring for anything that opts out of a component-level style. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Themed scrollbars — the default light track is jarring against dark surfaces. */
+* {
+  scrollbar-color: var(--border-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted-foreground);
+}
+
+/* Embedded dashboard surfaces.
+ *
+ * `transparent` here is only ever half the story: an embed is a cross-origin
+ * document, so its own background cannot be reached from this stylesheet. What
+ * this does is stop the app from painting anything behind the frame, so whatever
+ * the provider leaves unpainted shows the page through. Providers that accept a
+ * background colour are additionally passed the resolved `--background` value
+ * (see useThemeBackground.ts).
+ *
+ * The scrollbar rules likewise apply to *our* scroll containers. Scrollbars
+ * rendered inside the iframe belong to the provider's document and are not
+ * styleable from outside it.
+ */
+.embed-surface,
+.embed-surface iframe {
+  background-color: transparent;
+}
+
+/* Clip rather than scroll. A Tableau workbook authored at a fixed size (say
+   1600x1150) does not shrink to its container, so without this the oversized viz
+   pushes scrollbars onto the *app* — the page ends up scrolling sideways around a
+   dashboard that already has its own scrollbars inside the frame. Panning stays
+   the provider's job, where it belongs. */
+.embed-surface {
+  overflow: hidden;
+}
+
+/* Fullscreen composites against black, so the deliberately-transparent surface
+   needs the page colour back for the duration — otherwise a viz with any
+   unpainted area shows through to black. */
+.embed-surface:fullscreen {
+  background-color: var(--background);
+}
+.embed-surface,
+.embed-surface * {
+  scrollbar-width: thin;
+}
+.embed-surface ::-webkit-scrollbar,
+.embed-surface::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+/* No inset border at this width — it would leave the thumb a sliver wide. */
+.embed-surface ::-webkit-scrollbar-thumb,
+.embed-surface::-webkit-scrollbar-thumb {
+  border: 0;
+  background-clip: border-box;
+}

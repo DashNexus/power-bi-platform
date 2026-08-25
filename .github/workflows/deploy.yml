@@ -1,0 +1,139 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        required: true
+        default: dev
+        type: choice
+        options: [dev, prod]
+
+# One deploy at a time per environment; a queued run waits rather than racing.
+concurrency:
+  group: deploy-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # OIDC federation to Azure — no stored service-principal secret
+  contents: read
+
+env:
+  ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+
+jobs:
+  deploy:
+    name: Build, push, migrate
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve the image tag
+        id: tag
+        run: echo "value=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # Infrastructure first: the frontend image needs the API's URL at *build*
+      # time, because NEXT_PUBLIC_API_URL is inlined into the browser bundle.
+      - name: Provision infrastructure
+        run: |
+          az deployment group create \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --template-file deploy/azure/main.bicep \
+            --parameters "@deploy/azure/parameters.${ENVIRONMENT}.json" \
+            --parameters \
+              environmentName="$ENVIRONMENT" \
+              containerRegistry="${{ secrets.ACR_NAME }}.azurecr.io" \
+              apiImage="${{ secrets.ACR_NAME }}.azurecr.io/power-bi-platform-api:${{ steps.tag.outputs.value }}" \
+              applicationImage="${{ secrets.ACR_NAME }}.azurecr.io/power-bi-platform-app:${{ steps.tag.outputs.value }}" \
+              sqlAdminPassword="${{ secrets.SQL_ADMIN_PASSWORD }}" \
+              nextAuthSecret="${{ secrets.NEXTAUTH_SECRET }}" \
+              totpEncryptionKey="${{ secrets.TOTP_ENCRYPTION_KEY }}" \
+            --output none
+
+      - name: Read the API URL
+        id: urls
+        run: |
+          echo "api=$(az deployment group show \
+            -g '${{ secrets.AZURE_RESOURCE_GROUP }}' -n main \
+            --query properties.outputs.apiUrl.value -o tsv)" >> "$GITHUB_OUTPUT"
+          echo "app=$(az deployment group show \
+            -g '${{ secrets.AZURE_RESOURCE_GROUP }}' -n main \
+            --query properties.outputs.applicationUrl.value -o tsv)" >> "$GITHUB_OUTPUT"
+
+      # ACR build rather than build-and-push: the registry does the work, so the
+      # runner never needs registry credentials or a docker login.
+      - name: Build the API image
+        run: |
+          az acr build --registry "${{ secrets.ACR_NAME }}" \
+            --image "power-bi-platform-api:${{ steps.tag.outputs.value }}" \
+            --image "power-bi-platform-api:latest" \
+            --file api/Dockerfile api
+
+      - name: Build the frontend image
+        run: |
+          az acr build --registry "${{ secrets.ACR_NAME }}" \
+            --image "power-bi-platform-app:${{ steps.tag.outputs.value }}" \
+            --image "power-bi-platform-app:latest" \
+            --build-arg "NEXT_PUBLIC_API_URL=${{ steps.urls.outputs.api }}" \
+            --file application/Dockerfile application
+
+      # Migrate before the new images serve traffic. The migration is additive
+      # and idempotent, so the outgoing revision keeps working against the new
+      # schema for the seconds the rollout takes.
+      - name: Run database migrations
+        run: |
+          az containerapp exec \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "pbip-${ENVIRONMENT}-api" \
+            --command "alembic upgrade head"
+
+      - name: Roll out the API
+        run: |
+          az containerapp update \
+            -g "${{ secrets.AZURE_RESOURCE_GROUP }}" -n "pbip-${ENVIRONMENT}-api" \
+            --image "${{ secrets.ACR_NAME }}.azurecr.io/power-bi-platform-api:${{ steps.tag.outputs.value }}" \
+            --output none
+
+      - name: Roll out the frontend
+        run: |
+          az containerapp update \
+            -g "${{ secrets.AZURE_RESOURCE_GROUP }}" -n "pbip-${ENVIRONMENT}-app" \
+            --image "${{ secrets.ACR_NAME }}.azurecr.io/power-bi-platform-app:${{ steps.tag.outputs.value }}" \
+            --output none
+
+      - name: Smoke-test the deployment
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fsS "${{ steps.urls.outputs.api }}/health" > /dev/null; then
+              echo "API healthy"
+              exit 0
+            fi
+            echo "waiting for the API to come up ($i/20)"
+            sleep 10
+          done
+          echo "API did not become healthy" >&2
+          exit 1
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "### Deployed to \`$ENVIRONMENT\`"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Tag | \`${{ steps.tag.outputs.value }}\` |"
+            echo "| API | ${{ steps.urls.outputs.api }} |"
+            echo "| Application | ${{ steps.urls.outputs.app }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,123 @@
+# Local development stack.
+#
+# `mssql` is Azure SQL Edge, which speaks the same wire protocol and T-SQL
+# surface as Azure SQL Database and runs on arm64 as well as amd64. It is the
+# closest thing to Azure SQL you can run on a laptop; the differences that
+# matter here (VARCHAR needing a length, one cascade path per table pair, no
+# RETURNING) all behave identically.
+#
+# Redis is **optional** and lives behind the `cache` profile. Nothing requires
+# it: the pipeline poller's cross-worker lock and the notification rate limiter
+# both degrade gracefully when it is unreachable, so a single-node deployment
+# can leave it out entirely. Start it with `--profile cache` once you run more
+# than one API replica.
+
+name: power-bi-platform
+
+services:
+  mssql:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    container_name: pbip-mssql
+    environment:
+      ACCEPT_EULA: "1"
+      # SA_PASSWORD, not MSSQL_SA_PASSWORD. Azure SQL Edge reads only this older
+      # spelling; given the newer one it starts, reports healthy, and leaves sa
+      # unusable — which surfaces as "Login failed for user sa" long after the
+      # thing that caused it. Setting *both* fails the same way, so do not.
+      # The password policy is the same as Azure SQL's.
+      SA_PASSWORD: ${MSSQL_SA_PASSWORD:-LocalDev_Passw0rd!}
+      MSSQL_PID: Developer
+    ports:
+      # Published on 15433, not 1433: a Windows dev box very often already has a
+      # SQL Server instance owning 1433, and the collision surfaces as "Login
+      # failed for user 'sa'" against *their* server rather than this container.
+      # Override with MSSQL_HOST_PORT if 15433 is taken too — a local instance can
+      # hold several ports, and the clash is silent.
+      - "${MSSQL_HOST_PORT:-15433}:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      # A real login, not a TCP connect. SQL Server accepts connections on 1433
+      # well before the sa login works during first-time setup, so a port probe
+      # reports healthy while every authentication still fails.
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "$$SA_PASSWORD" -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # Creates the two databases once the server is up, then exits. Separate from
+  # the migration so `make db-migrate` stays the only thing that writes schema.
+  db-init:
+    image: mcr.microsoft.com/mssql-tools18:latest
+    container_name: pbip-db-init
+    depends_on:
+      mssql:
+        condition: service_healthy
+    environment:
+      SA_PASSWORD: ${MSSQL_SA_PASSWORD:-LocalDev_Passw0rd!}
+    entrypoint: >
+      /bin/bash -c "
+      /opt/mssql-tools18/bin/sqlcmd -S mssql -U sa -P \"$$SA_PASSWORD\" -C -b -Q \"
+        IF DB_ID('biplatform_app') IS NULL CREATE DATABASE biplatform_app;
+        IF DB_ID('biplatform_warehouse') IS NULL CREATE DATABASE biplatform_warehouse;
+      \"
+      "
+    restart: "no"
+
+  redis:
+    image: redis:7-alpine
+    container_name: pbip-redis
+    profiles: ["cache"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ./api
+    container_name: pbip-api
+    profiles: ["full"]
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      APP_DATABASE_URL: >-
+        mssql+aioodbc://sa:${MSSQL_SA_PASSWORD:-LocalDev_Passw0rd!}@mssql:1433/biplatform_app?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
+      WAREHOUSE_DATABASE_URL: >-
+        mssql+aioodbc://sa:${MSSQL_SA_PASSWORD:-LocalDev_Passw0rd!}@mssql:1433/biplatform_warehouse?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY in .env}
+      CORS_ORIGINS: http://localhost:3000
+      STORAGE_URI: file:///data/storage
+      ENV: development
+    ports:
+      - "8000:8000"
+    volumes:
+      - api-storage:/data/storage
+
+  application:
+    build:
+      context: ./application
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    container_name: pbip-application
+    profiles: ["full"]
+    depends_on:
+      - api
+    environment:
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env}
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+
+volumes:
+  mssql-data:
+  api-storage:
