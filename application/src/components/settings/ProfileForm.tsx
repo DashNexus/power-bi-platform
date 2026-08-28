@@ -4,9 +4,8 @@
  * Editable profile: avatar, personal details, and password.
  *
  * This page was read-only and told people to "contact your administrator" to
- * change their own display name. Everything here is a field the subject owns.
- * Rates, capacity, skills, and active status are deliberately absent — those are
- * the org's to set, and self-editing a bill rate is the obvious problem.
+ * change their own display name. Everything here is a field the subject owns;
+ * whether the account may sign in, and what it may reach, are the org's.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
@@ -26,7 +25,6 @@ export interface MyProfile {
   first_name: string | null
   last_name: string | null
   job_title: string | null
-  department: string | null
   phone_number: string | null
   timezone: string | null
   avatar_url: string | null
@@ -42,7 +40,6 @@ type EditableField =
   | 'first_name'
   | 'last_name'
   | 'job_title'
-  | 'department'
   | 'phone_number'
   | 'timezone'
 
@@ -59,7 +56,6 @@ export function ProfileForm() {
     first_name: '',
     last_name: '',
     job_title: '',
-    department: '',
     phone_number: '',
     timezone: '',
   })
@@ -80,7 +76,6 @@ export function ProfileForm() {
       first_name: next.first_name ?? '',
       last_name: next.last_name ?? '',
       job_title: next.job_title ?? '',
-      department: next.department ?? '',
       phone_number: next.phone_number ?? '',
       timezone: next.timezone ?? '',
     })
@@ -287,13 +282,6 @@ export function ProfileForm() {
               id="last_name"
               value={fields.last_name}
               onChange={e => setField('last_name', e.target.value)}
-            />
-          </Field>
-          <Field label="Department" htmlFor="department">
-            <Input
-              id="department"
-              value={fields.department}
-              onChange={e => setField('department', e.target.value)}
             />
           </Field>
           <Field

@@ -16,7 +16,6 @@ class UserResponse(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     job_title: str | None = None
-    department: str | None = None
     avatar_url: str | None = None
     timezone: str | None = None
     phone_number: str | None = None
@@ -38,7 +37,6 @@ class UserCreateRequest(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     job_title: str | None = None
-    department: str | None = None
     timezone: str | None = None
     phone_number: str | None = None
     role_ids: list[int] = []
@@ -51,7 +49,6 @@ class UserUpdateRequest(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     job_title: str | None = None
-    department: str | None = None
     timezone: str | None = None
     phone_number: str | None = None
     is_active: bool | None = None
@@ -75,13 +72,3 @@ class RoleCreateRequest(BaseModel):
     name: str
     description: str | None = None
     permission_keys: list[str] = []
-
-
-class InviteRequest(BaseModel):
-    """Payload for inviting a new user by email."""
-
-    email: str
-    first_name: str | None = None
-    last_name: str | None = None
-    department: str | None = None
-    role_id: int | None = None

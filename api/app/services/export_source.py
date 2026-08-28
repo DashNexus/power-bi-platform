@@ -262,12 +262,24 @@ def _run_select_sync(
     engine = sa.create_engine(url, connect_args=connect_args, poolclass=NullPool)
     try:
         with engine.connect() as connection:
-            _apply_statement_timeout(connection, timeout_seconds)
             # begin() here is explicit rather than relying on autobegin, because
             # the rollback in the finally clause is the actual guarantee and it
             # should be obvious that something opened what it closes.
+            #
+            # It has to come *first*. On PostgreSQL the timeout is applied by
+            # executing `SET statement_timeout`, and any execute() autobegins a
+            # transaction — so setting the timeout before this line makes
+            # begin() raise "this connection has already initialized a
+            # Transaction" and fails every report. The app database here is SQL
+            # Server, where the timeout is a driver attribute and no statement
+            # runs, so this only ever bit a *warehouse connection* pointed at
+            # PostgreSQL — which is a supported db_type.
             trans = connection.begin()
+            # READ ONLY before the timeout: PostgreSQL requires SET TRANSACTION
+            # to precede the first *query* in the transaction, and putting the
+            # strongest guarantee first is the safer habit besides.
             _apply_read_only_transaction(connection)
+            _apply_statement_timeout(connection, timeout_seconds)
             try:
                 result = connection.execute(sa.text(sql))
                 columns = list(result.keys())

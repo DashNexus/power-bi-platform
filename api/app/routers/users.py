@@ -56,7 +56,6 @@ class MyProfileResponse(BaseModel):
     first_name: str | None
     last_name: str | None
     job_title: str | None
-    department: str | None
     phone_number: str | None
     timezone: str | None
     avatar_url: str | None
@@ -71,16 +70,15 @@ class MyProfileResponse(BaseModel):
 class ProfileUpdate(BaseModel):
     """Fields a user may change on their own account.
 
-    Deliberately excludes `is_active`. Those drive AI task
-    assignment and billing, so they are the org's to set, not the subject's —
-    self-editing a bill rate is the obvious problem.
+    Deliberately excludes `is_active` and role membership: whether an account
+    may sign in, and what it may reach, are the org's to set rather than the
+    subject's.
     """
 
     display_name: str | None = None
     first_name: str | None = None
     last_name: str | None = None
     job_title: str | None = None
-    department: str | None = None
     phone_number: str | None = None
     timezone: str | None = None
 
@@ -89,7 +87,6 @@ class ProfileUpdate(BaseModel):
         "first_name",
         "last_name",
         "job_title",
-        "department",
         "phone_number",
         "timezone",
         mode="before",
@@ -153,7 +150,6 @@ async def _profile(db: AsyncSession, user: User, role: str) -> MyProfileResponse
         first_name=user.first_name,
         last_name=user.last_name,
         job_title=user.job_title,
-        department=user.department,
         phone_number=user.phone_number,
         timezone=user.timezone,
         avatar_url=user.avatar_url,
@@ -193,7 +189,6 @@ async def update_my_profile(
         "first_name",
         "last_name",
         "job_title",
-        "department",
         "phone_number",
         "timezone",
     ):
@@ -356,7 +351,7 @@ async def list_directory(
 
     Available to any authenticated user, because knowing who your colleagues are
     is not privileged — the fields are exactly what a picker renders, and nothing
-    more. Contact details, rates, capacity, and status stay on the admin API.
+    more. Contact details and account status stay on the admin API.
 
     If a `GET /users/{user_id}` route is ever added it must be declared *after*
     this one and after `/users/me`: FastAPI matches in declaration order and

@@ -72,6 +72,11 @@ Narrowed rather than removed:
   org-global `powerbi_sp` row when a dashboard has no `bi_connection_id` — the
   dashboard editor requires one, so that path is only reachable by rows created
   before connections existed.
+- **A user has no staffing profile.** No user type, weekly capacity, bill
+  rate, skills, or department: this build publishes reports to an organisation
+  and has nothing that assigns work. The first four never existed in this
+  schema — the admin console was still rendering inputs for them, which pydantic
+  discarded on every save — and `users.department` went in migration `005`.
 - **`org_settings` survives with five columns** (`app_name`, `logo_url`,
   `audit_retention_days`, `nav_config`, `updated_at`). There is still no
   org-settings console: each field is edited from the page that owns it — audit
@@ -179,6 +184,40 @@ Every one is here because it was violated, or would be by the obvious change.
 - **Email delivery is refused by the API, not just hidden in the UI**
   (`_UNAVAILABLE_DELIVERY_METHODS`). A report saved with a delivery that never
   runs is worse than one that refuses to save.
+
+### Invitations
+
+- **One invitation, two ways to deliver it.** `POST /admin/users/invite` mails
+  the link *and* returns it, so `invite_url` is on every `InviteResponse`. A
+  deployment with no `SMTP_HOST` is a supported way to run this: the send fails,
+  `email_error` says why, and the admin copies the link out of `/admin/users`.
+  A send failure is never raised — the invitation is valid whatever the mail
+  server did with it, and an error instead of a link leaves the admin nothing.
+- **The token is the whole credential, so it expires and it is single-use.**
+  Seven days (`services/invites.py::INVITE_TTL_DAYS`, which the email copy
+  states) or one acceptance, whichever comes first. `accepted_at` is the used
+  mark; `invite_status` reads accepted before expired, so a link that produced
+  an account never offers Resend.
+- **Resending mints a new token rather than re-mailing the old one**, so a link
+  that leaked — forwarded, or sitting in a list archive — stops working the
+  moment an admin resends. Issuing a second invitation for an address supersedes
+  the first for the same reason: two live tokens for one mailbox means the link
+  the admin copies need not be the one the invitee has.
+- **The address comes from the invitation, never from the accept request.** The
+  token proves its holder reached one mailbox; letting them name another turns
+  an invitation to one person into an account for anyone.
+- **`/invites/*` is mounted outside `/admin` deliberately.** Both routes are
+  unauthenticated, because the person using them has no account yet; an
+  unauthenticated route under an admin prefix reads as an oversight every time
+  it is reviewed. `tests/routers/test_invites.py::TestPublicRoutes` pins the
+  split — every issuing route admin-gated, neither redeeming route touching
+  `middleware/auth`.
+- **`/accept-invite` is excluded from the frontend middleware matcher**, not
+  merely allowed through the `authorized` callback: Auth.js redirects an
+  unauthenticated request to `/login` before the callback runs, and an invitee
+  has no session to be redirected back from. The matcher must stay a single
+  string literal — Next.js parses that export rather than evaluating it, and
+  fails the build on a concatenation.
 
 ### Portal navigation
 
@@ -327,6 +366,7 @@ load audit log." for as long as it did.
 | There is no Schedules tab, and no `POST /exports/jobs` | **Both removed** (migration 003). Schedules recorded when and where to deliver but never *what*, so nothing could run one. `POST /jobs` queued arbitrary SQL without `_validate_report_source`, letting a non-admin read the operations database. A report plus a run replaces both, with one set of guards. `tests/routers/test_exports.py::TestRemovedEndpoints` asserts they stay gone. |
 | The change feed's type filter is fetched, not hard-coded | `GET /changes/resource-types` serves it from the mutation registry. The list used to be written out in `admin/changes/page.tsx`, where it had drifted to offer projects, tasks, tickets and ERDs — none of which exist here — while omitting every type that does. Do not re-inline it. |
 | Three frontend call sites point at routes that do not exist | `/pipelines/adf/test` (the ADF "Test connection" button on `/admin/auth-config`) and two `/embed/tableau/*` calls in `DashboardCreator`. Each needs a product decision, not a renamed string: ADF connections moved to `/admin/data-pipelines` and are tested per-connection, and Tableau is not a provider in this build. They are named in `tests/test_frontend_api_paths.py::_KNOWN_DEAD_PATHS`, which fails if a fourth appears — or if one of these is fixed and the entry left behind. |
+| Invitation emails go nowhere by default | `SMTP_HOST` is blank in `.env.example`, so every send fails with "SMTP is not configured". The invitation is still created and its link still works — that is what the copy button on `/admin/users` is for. |
 | Entra SSO ships unconfigured | The wiring is complete; the three `AZURE_AD_*` variables are blank, so password sign-in is the only route until a tenant is registered. This is the intended placeholder state. |
 | Local DB is published on port 15433 | Not 1433 — a dev box with SQL Server installed already owns that, and can hold several ports at once. `scripts/dev.sh` detects a foreign listener and names the process. |
 | Azure SQL Edge reads `SA_PASSWORD`, not `MSSQL_SA_PASSWORD` | Given only the newer name it starts, reports healthy, and leaves `sa` unusable. Setting **both** fails the same way. `docker-compose.yml` sets the older name alone — do not "modernise" it. |

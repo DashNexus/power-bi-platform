@@ -126,6 +126,7 @@ from app.routers import (  # noqa: E402
     embed,
     exports,
     favorites,
+    invites,
     notifications,
     pages,
     pipeline_notifications,
@@ -138,6 +139,7 @@ from app.routers import (  # noqa: E402
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(users.router, tags=["Users"])
+app.include_router(invites.router, tags=["Invites"])
 app.include_router(portal.router, tags=["Portal"])
 app.include_router(dashboards.router, tags=["Dashboards"])
 app.include_router(embed.router, prefix="/embed", tags=["Embed"])

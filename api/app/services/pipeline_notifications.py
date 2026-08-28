@@ -57,13 +57,19 @@ async def _send_teams(url: str, subject: str, message: str) -> tuple[bool, str |
     )
 
 
-def _send_email_sync(recipients: list[str], subject: str, body: str) -> None:
+def _send_email_sync(
+    recipients: list[str], subject: str, body: str, html_body: str | None = None
+) -> None:
     """Send one email to all recipients via SMTP (blocking; run in a thread)."""
     msg = EmailMessage()
     msg["From"] = settings.smtp_from_address or settings.smtp_user or "noreply@biplatform"
     msg["To"] = ", ".join(recipients)
     msg["Subject"] = subject
+    # The plain part is set first so it stays the fallback: a client that cannot
+    # render HTML still gets the link as text it can copy.
     msg.set_content(body)
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
     with smtplib.SMTP(settings.smtp_host or "", settings.smtp_port, timeout=15) as smtp:
         smtp.starttls()
         if settings.smtp_user and settings.smtp_password:
@@ -71,12 +77,14 @@ def _send_email_sync(recipients: list[str], subject: str, body: str) -> None:
         smtp.send_message(msg)
 
 
-async def _send_email(recipients: list[str], subject: str, body: str) -> tuple[bool, str | None]:
+async def _send_email(
+    recipients: list[str], subject: str, body: str, html_body: str | None = None
+) -> tuple[bool, str | None]:
     if not settings.smtp_host:
         logger.warning("pipeline_notif.email_skipped", reason="SMTP not configured")
         return False, "SMTP is not configured (set SMTP_HOST)."
     try:
-        await asyncio.to_thread(_send_email_sync, recipients, subject, body)
+        await asyncio.to_thread(_send_email_sync, recipients, subject, body, html_body)
         return True, None
     except Exception as exc:  # noqa: BLE001 — surface any SMTP error as a result
         return False, str(exc)

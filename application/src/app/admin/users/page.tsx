@@ -18,12 +18,7 @@ interface User {
   display_name: string | null
   first_name: string | null
   last_name: string | null
-  department: string | null
   phone_number: string | null
-  user_type: string | null
-  skills: string | null
-  weekly_capacity_hours: number | null
-  default_bill_rate: number | null
   is_active: boolean
   totp_enabled: boolean
   last_login_at: string | null

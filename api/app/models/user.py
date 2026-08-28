@@ -47,7 +47,6 @@ class User(Base, TimestampMixin):
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    department: Mapped[str | None] = mapped_column(String(255), nullable=True)
     job_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # App-relative path to the stored avatar image, not the bytes themselves.
     avatar_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
@@ -123,7 +122,11 @@ class UserRole(Base):
 
 
 class UserInvite(Base):
-    """A pending invitation for a new user to join an organisation."""
+    """A pending invitation for a new user to join an organisation.
+
+    The token is the credential: it is what the emailed link and the copyable
+    link both carry, and `accepted_at` is what makes it single-use.
+    """
 
     __tablename__ = "user_invites"
 
@@ -133,6 +136,8 @@ class UserInvite(Base):
     )
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("roles.id"), nullable=True
     )

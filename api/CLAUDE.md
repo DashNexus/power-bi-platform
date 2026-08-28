@@ -30,6 +30,7 @@ from a router.
 | `auth.py` | `/auth` | Tokens, TOTP, OAuth exchange |
 | `admin.py` | `/admin` | Users, roles, feature flags, auth config, invites, portal navigation |
 | `users.py` | `/users` | Own profile, password, avatar, org directory (**self-service only**) |
+| `invites.py` | `/invites` | Preview and accept an invitation — **unauthenticated**, the token is the credential |
 | `portal.py` | `/portal` | Effective feature flags and branding for the shell |
 | `dashboards.py` | `/dashboards` `/admin/dashboards` | CRUD, shares, filters, versions |
 | `embed.py` | `/embed` | Power BI embed tokens, workspace/report discovery |
@@ -94,7 +95,7 @@ that a mocked test session cannot see.
 role matrix, the admin user, feature flags). It is a fresh fork with no deployed
 database to upgrade, so a chain of sixty increments would describe history that
 never happened here. Later changes get their own revision as usual —
-`002_export_runs.py` is the first.
+`002_export_runs.py` is the first; `005` is the latest.
 
 **Dropping a column with a `server_default` on SQL Server needs the default
 constraint dropped first.** It is a separately-named object, and `DROP COLUMN`
@@ -263,6 +264,28 @@ Rules that must hold (regressions here leak data):
   continue when it is unreachable. That is what makes a single-node deployment
   Redis-free — but it also means **more than one API replica needs Redis**, or
   each one polls and the same alert goes out several times.
+
+## Invitations
+
+`services/invites.py` owns the whole lifecycle; `routers/admin.py` issues and
+`routers/invites.py` redeems.
+
+- **Issuing returns the link as well as sending it.** `invite_url` is on every
+  `InviteResponse`, and `email_sent`/`email_error` report the delivery. A failed
+  send is reported, never raised — an admin with no SMTP invites people by
+  copying the link, which is a supported way to run this.
+- **Seven days or one use.** `INVITE_TTL_DAYS` is what the email body promises,
+  so the two change together. `invite_status` checks accepted before expired.
+- **`_as_utc` exists because a `DateTime(timezone=True)` column does not always
+  come back aware.** Comparing a naive expiry to an aware "now" raises
+  TypeError, which the invitee would see as a 500 rather than "this link has
+  expired".
+- **Resend and re-invite both replace the token**, so exactly one link per
+  mailbox is ever live and a leaked one dies on the next send.
+- **The accepted address is the invitation's, not the request's**, and the
+  request cannot name a role — only the invitation's `role_id` is applied.
+- **Password length matches `POST /users/me/password`** (12): an invitee must
+  not be able to set a password they would then be refused for rotating.
 
 ## Data dictionary
 

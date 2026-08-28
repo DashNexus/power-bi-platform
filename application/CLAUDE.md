@@ -283,6 +283,19 @@ state — reading during render hydrate-mismatches, since the server has no
   sends `null`.
 - **People-pickers use `GET /users/directory`**, which any authenticated user may
   read. `/admin/users` is admin-only and 403s.
+- **A user has no staffing profile** — no user type, capacity, bill rate,
+  skills, or department. `UsersClient` rendered inputs for all five; the API had
+  columns for none of them but `department`, so four saved nothing at all.
+- **An invitation is a link first and an email second.** `POST
+  /admin/users/invite` returns `invite_url`, and the dialog switches to showing
+  it rather than closing on a toast — an admin whose SMTP is unconfigured has
+  nothing else to hand over. The invitations table repeats Copy link, plus
+  Resend (which replaces the token, so the row must be swapped for the
+  response) and Revoke.
+- **`/accept-invite` is in the `(auth)` group and excluded from the middleware
+  matcher**, because the invitee has no session. It fetches `GET
+  /invites/{token}` before rendering the form: someone holding a used or expired
+  link is told so, rather than filling in a password to be refused on submit.
 
 ## Adding an admin page
 

@@ -36,11 +36,9 @@ def _make_user(user_id: int = 1, *, hashed_password: str | None = "hashed") -> M
     user.first_name = None
     user.last_name = None
     user.job_title = None
-    user.department = None
     user.phone_number = None
     user.timezone = None
     user.avatar_url = None
-    user.user_type = None
     user.totp_enabled = False
     user.hashed_password = hashed_password
     return user
@@ -158,12 +156,22 @@ class TestUpdateMyProfile:
 
         assert user.display_name == "Ada Lovelace"
 
-    @pytest.mark.asyncio
-    async def test_bill_rate_is_not_a_self_editable_field(self) -> None:
-        """Rates and capacity drive billing, so they stay on the admin API."""
-        assert "default_bill_rate" not in ProfileUpdate.model_fields
-        assert "weekly_capacity_hours" not in ProfileUpdate.model_fields
-        assert "is_active" not in ProfileUpdate.model_fields
+    def test_the_self_editable_field_set_is_exactly_this(self) -> None:
+        """Whether an account may sign in is the org's to set, not the subject's.
+
+        Asserted as an exact set rather than a list of absences: a field added
+        to the model reaches this route whether or not anyone thought about who
+        should own it, and naming individual fields only catches the ones
+        already imagined.
+        """
+        assert set(ProfileUpdate.model_fields) == {
+            "display_name",
+            "first_name",
+            "last_name",
+            "job_title",
+            "phone_number",
+            "timezone",
+        }
 
 
 # ---------------------------------------------------------------------------

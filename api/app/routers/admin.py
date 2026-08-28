@@ -19,13 +19,13 @@ from app.database import get_app_db
 from app.middleware.auth import CurrentUser, require_role
 from app.models.org_settings import OrgSettings
 from app.schemas.common import MessageResponse, PaginatedResponse
+from app.schemas.invite import InviteRequest, InviteResponse
 from app.schemas.nav_config import (
     NavConfigRequest,
     NavConfigResponse,
     NavItem,
 )
 from app.schemas.user import (
-    InviteRequest,
     RoleCreateRequest,
     RoleResponse,
     UserCreateRequest,
@@ -35,6 +35,7 @@ from app.schemas.user import (
 from app.services import admin_overview as admin_overview_svc
 from app.services import auth_config as auth_config_svc
 from app.services import change_ledger as ledger
+from app.services import invites as invite_svc
 from app.services import principal_cleanup
 from app.services import user as user_svc
 from app.services.audit import audit_action
@@ -263,33 +264,41 @@ async def assign_user_roles(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/users/invite", response_model=MessageResponse, status_code=201)
+@router.post("/users/invite", response_model=InviteResponse, status_code=201)
 async def invite_user(
     data: InviteRequest,
     current_user: CurrentUser = Depends(_admin_dep),
     db: AsyncSession = Depends(get_app_db),
-) -> MessageResponse:
-    """Send an invitation to a new user to join the organisation."""
-    await user_svc.create_invite(db, current_user.org_id, current_user.user_id, data)
-    from app.services.audit import audit_action  # noqa: PLC0415
+) -> InviteResponse:
+    """Invite someone to join the organisation.
+
+    The response always carries `invite_url`, whether or not the email was sent
+    or even attempted: an admin who cannot mail — no SMTP, a mailbox that
+    bounces — still has a link to hand over themselves. A send that fails is
+    reported in `email_error`, not raised, because the invitation is valid
+    regardless of what the mail server did with it.
+    """
+    invite = await invite_svc.create_invite(
+        db, current_user.org_id, current_user.user_id, data
+    )
+    role_name = await invite_svc.role_name_for(db, invite.role_id)
+
+    sent: bool | None = None
+    error: str | None = None
+    if data.send_email:
+        sent, error = await invite_svc.send_invite_email(
+            db, invite, inviter=current_user.email
+        )
+
     await audit_action(
         db, org_id=current_user.org_id, user_id=current_user.user_id,
-        action="user.invited", resource_type="user", resource_name=data.email,
+        action="user.invited", resource_type="invite", resource_id=invite.id,
+        resource_name=invite.email, extra={"email_sent": bool(sent)},
     )
     await db.commit()
-    return MessageResponse(message=f"Invitation sent to {data.email}")
-
-
-@router.post("/users/invite/{token}/accept", response_model=MessageResponse)
-async def accept_invite(
-    token: str,
-    password: str,
-    display_name: str | None = None,
-    db: AsyncSession = Depends(get_app_db),
-) -> MessageResponse:
-    """Accept an invitation and create the user account."""
-    await user_svc.accept_invite(db, token, password, display_name)
-    return MessageResponse(message="Account created successfully")
+    return invite_svc.to_response(
+        invite, role_name=role_name, email_sent=sent, email_error=error
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -634,32 +643,48 @@ async def update_sso(
     return result
 
 
-@router.get("/invites")
+@router.get("/invites", response_model=list[InviteResponse])
 async def list_invites(
     current_user: CurrentUser = Depends(_admin_dep),
     db: AsyncSession = Depends(get_app_db),
-) -> list[dict[str, Any]]:
-    """Return pending and recently accepted invitations for the organisation."""
-    from sqlalchemy import select  # noqa: PLC0415
+) -> list[InviteResponse]:
+    """Return every invitation for the organisation, newest first."""
+    return await invite_svc.list_invites(db, current_user.org_id)
 
-    from app.models.user import UserInvite  # noqa: PLC0415
-    result = await db.execute(
-        select(UserInvite).where(UserInvite.org_id == current_user.org_id)
-        .order_by(UserInvite.created_at.desc())
+
+@router.post("/invites/{invite_id}/resend", response_model=InviteResponse)
+async def resend_invite(
+    invite_id: int,
+    current_user: CurrentUser = Depends(_admin_dep),
+    db: AsyncSession = Depends(get_app_db),
+) -> InviteResponse:
+    """Mint a fresh token for an open invitation and email it again.
+
+    Resending revives an expired invitation as well as an unopened one — that is
+    the whole point of the button, and the alternative is asking an admin to
+    revoke and retype the address.
+    """
+    invite = await invite_svc.load_invite(db, invite_id, current_user.org_id)
+    if invite.accepted_at is not None:
+        raise HTTPException(
+            status_code=409, detail="This invitation has already been accepted"
+        )
+
+    await invite_svc.refresh_invite(db, invite)
+    role_name = await invite_svc.role_name_for(db, invite.role_id)
+    sent, error = await invite_svc.send_invite_email(
+        db, invite, inviter=current_user.email
     )
-    invites = result.scalars().all()
-    return [
-        {
-            "id": inv.id,
-            "email": inv.email,
-            "role_id": inv.role_id,
-            "accepted": inv.accepted_at is not None,
-            "accepted_at": inv.accepted_at.isoformat() if inv.accepted_at else None,
-            "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
-            "created_at": inv.created_at.isoformat() if inv.created_at else None,
-        }
-        for inv in invites
-    ]
+
+    await audit_action(
+        db, org_id=current_user.org_id, user_id=current_user.user_id,
+        action="invite.resent", resource_type="invite", resource_id=invite.id,
+        resource_name=invite.email, extra={"email_sent": sent},
+    )
+    await db.commit()
+    return invite_svc.to_response(
+        invite, role_name=role_name, email_sent=sent, email_error=error
+    )
 
 
 @router.delete("/invites/{invite_id}", response_model=MessageResponse)
@@ -668,26 +693,19 @@ async def revoke_invite(
     current_user: CurrentUser = Depends(_admin_dep),
     db: AsyncSession = Depends(get_app_db),
 ) -> MessageResponse:
-    """Revoke a pending invitation."""
-    from sqlalchemy import select  # noqa: PLC0415
-
-    from app.models.user import UserInvite  # noqa: PLC0415
-    result = await db.execute(
-        select(UserInvite).where(
-            UserInvite.id == invite_id,
-            UserInvite.org_id == current_user.org_id,
-            UserInvite.accepted_at.is_(None),
+    """Revoke an invitation, making its link stop working immediately."""
+    invite = await invite_svc.load_invite(db, invite_id, current_user.org_id)
+    if invite.accepted_at is not None:
+        raise HTTPException(
+            status_code=409, detail="This invitation has already been accepted"
         )
-    )
-    inv = result.scalar_one_or_none()
-    if inv is None:
-        raise HTTPException(status_code=404, detail="Invite not found or already accepted")
-    await db.delete(inv)
-    from app.services.audit import audit_action  # noqa: PLC0415
+
+    email = invite.email
+    await db.delete(invite)
     await audit_action(
         db, org_id=current_user.org_id, user_id=current_user.user_id,
         action="invite.revoked", resource_type="invite", resource_id=invite_id,
-        resource_name=inv.email,
+        resource_name=email,
     )
     await db.commit()
     return MessageResponse(message="Invitation revoked")

@@ -36,7 +36,7 @@ vi.mock('@/lib/auth', () => ({
   signOut: vi.fn(),
 }))
 
-import handler from '@/middleware'
+import handler, { config } from '@/middleware'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -117,6 +117,25 @@ describe('middleware admin guard', () => {
     middleware(makeReq('/admin/users'))
 
     expect(mockRedirect).not.toHaveBeenCalled()
+  })
+})
+
+describe('middleware matcher', () => {
+  // Auth.js redirects an unauthenticated request to /login before the
+  // authorized() callback runs, so a page reachable without an account has to
+  // be excluded here — allowing it in the callback is too late. An invitee
+  // following their link has no session to be redirected back from.
+  const matcher = new RegExp(`^${config.matcher[0]}$`)
+
+  it.each(['/accept-invite', '/login', '/forgot-password', '/reset-password'])(
+    'does not run on %s',
+    (pathname: string) => {
+      expect(matcher.test(pathname)).toBe(false)
+    },
+  )
+
+  it.each(['/home', '/admin/users', '/dashboard/4'])('runs on %s', (pathname: string) => {
+    expect(matcher.test(pathname)).toBe(true)
   })
 })
 

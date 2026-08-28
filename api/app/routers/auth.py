@@ -403,9 +403,8 @@ async def forgot_password(
 
     if user and user.hashed_password:
         token = _create_reset_token(user)
-        import os  # noqa: PLC0415
-        app_url = os.getenv("NEXTAUTH_URL", "http://localhost:3000")
-        reset_url = f"{app_url}/reset-password?token={token}"
+        base = settings.nextauth_url.rstrip("/")
+        reset_url = f"{base}/reset-password?token={token}"
         logger.info(
             "auth.password_reset_requested",
             user_id=user.id,

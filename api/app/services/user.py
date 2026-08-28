@@ -6,19 +6,15 @@ role or per key — the roles admin page loads every role's permissions at once.
 
 from __future__ import annotations
 
-import secrets
-from datetime import UTC, datetime, timedelta
-
 import structlog
 from fastapi import HTTPException
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import Permission, Role, RolePermission, User, UserInvite, UserRole
+from app.models.user import Permission, Role, RolePermission, User, UserRole
 from app.schemas.common import PaginatedResponse
 from app.schemas.user import (
-    InviteRequest,
     RoleCreateRequest,
     RoleResponse,
     UserCreateRequest,
@@ -53,7 +49,6 @@ async def _user_to_response(db: AsyncSession, user: User) -> UserResponse:
         display_name=user.display_name,
         first_name=user.first_name,
         last_name=user.last_name,
-        department=user.department,
         phone_number=user.phone_number,
         is_active=user.is_active,
         totp_enabled=user.totp_enabled,
@@ -152,7 +147,6 @@ async def create_user(
         first_name=data.first_name,
         last_name=data.last_name,
         job_title=data.job_title,
-        department=data.department,
         timezone=data.timezone,
         phone_number=data.phone_number,
     )
@@ -203,8 +197,6 @@ async def update_user(
         user.last_name = data.last_name
     if data.job_title is not None:
         user.job_title = data.job_title
-    if data.department is not None:
-        user.department = data.department
     if data.timezone is not None:
         user.timezone = data.timezone
     if data.phone_number is not None:
@@ -431,89 +423,3 @@ async def delete_role(db: AsyncSession, role_id: int, org_id: int) -> None:
     await db.delete(role)
     await db.commit()
     logger.info("role.deleted", role_id=role_id, org_id=org_id)
-
-
-async def create_invite(
-    db: AsyncSession,
-    org_id: int,
-    created_by_user_id: int,
-    data: InviteRequest,
-) -> UserInvite:
-    """Create a pending invitation for a new user.
-
-    Args:
-        db: Active async database session.
-        org_id: Organisation the invite belongs to.
-        created_by_user_id: ID of the admin user creating the invite.
-        data: Invite payload with target email and optional role.
-
-    Returns:
-        The created UserInvite ORM instance.
-    """
-    token = secrets.token_urlsafe(32)
-    expires_at = datetime.now(UTC) + timedelta(days=7)
-    invite = UserInvite(
-        org_id=org_id,
-        email=data.email,
-        token=token,
-        role_id=data.role_id,
-        created_by_user_id=created_by_user_id,
-        expires_at=expires_at,
-        created_at=datetime.now(UTC),
-    )
-    db.add(invite)
-    await db.commit()
-    await db.refresh(invite)
-    logger.info("invite.created", email=data.email, org_id=org_id)
-    return invite
-
-
-async def accept_invite(
-    db: AsyncSession,
-    token: str,
-    password: str,
-    display_name: str | None = None,
-) -> User:
-    """Accept a pending invitation and create the user account.
-
-    Args:
-        db: Active async database session.
-        token: The unique invite token from the invitation email.
-        password: Plaintext password chosen by the new user.
-        display_name: Optional display name for the new user.
-
-    Returns:
-        The newly created User ORM instance.
-
-    Raises:
-        HTTPException: 404 if the token is invalid or expired.
-        HTTPException: 409 if the email is already registered.
-    """
-    result = await db.execute(select(UserInvite).where(UserInvite.token == token))
-    invite = result.scalar_one_or_none()
-    if invite is None or invite.accepted_at is not None:
-        raise HTTPException(status_code=404, detail="Invitation not found or already used")
-    if invite.expires_at < datetime.now(UTC):
-        raise HTTPException(status_code=400, detail="Invitation has expired")
-
-    existing = await db.execute(select(User).where(User.email == invite.email))
-    if existing.scalar_one_or_none() is not None:
-        raise HTTPException(status_code=409, detail="Email address is already registered")
-
-    user = User(
-        org_id=invite.org_id,
-        email=invite.email,
-        hashed_password=hash_password(password),
-        display_name=display_name,
-    )
-    db.add(user)
-    await db.flush()
-
-    if invite.role_id:
-        db.add(UserRole(user_id=user.id, role_id=invite.role_id))
-
-    invite.accepted_at = datetime.now(UTC)
-    await db.commit()
-    await db.refresh(user)
-    logger.info("invite.accepted", user_id=user.id, org_id=invite.org_id)
-    return user

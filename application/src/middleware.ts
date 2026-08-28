@@ -46,8 +46,16 @@ export default auth((req) => {
   // Returning undefined lets Auth.js redirect unauthenticated users to /login
 })
 
+// Every page reachable without an account is excluded here, not merely allowed
+// through the callback: Auth.js redirects an unauthenticated request to /login
+// before the callback runs, and an invitee following their link has no session
+// to redirect back from.
+//
+// The pattern must be one string literal. Next.js reads this export by parsing
+// the file, not by evaluating it, and fails the build on a concatenation with
+// "Unsupported node type BinaryExpression".
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|login|register).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|login|register|accept-invite|forgot-password|reset-password).*)',
   ],
 }

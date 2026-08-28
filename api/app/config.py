@@ -58,6 +58,10 @@ class Settings(BaseSettings):
 
     # Auth
     nextauth_secret: str
+    # Origin of the Next.js app. Every link the API emails out — password
+    # resets, invitations — is built against it, so a wrong value produces mail
+    # nobody can act on rather than an error anyone sees.
+    nextauth_url: str = "http://localhost:3000"
     totp_encryption_key: str
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
